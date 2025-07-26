@@ -15,27 +15,45 @@ pipeline {
         stage('Debug Workspace') {
             steps {
                 // List workspace contents to verify repository structure
-                bat 'dir /S'
+                bat '''
+                    dir /S
+                    if not exist app.py (
+                        echo ERROR: app.py not found in workspace
+                        exit /b 1
+                    )
+                    if not exist requirements.txt (
+                        echo ERROR: requirements.txt not found in workspace
+                        exit /b 1
+                    )
+                '''
             }
         }
         stage('Setup Green Environment') {
             steps {
                 script {
                     dir('green') {
-                        // Try copying from app directory first
+                        // Create exclude.txt before xcopy
                         bat '''
+                            echo templates > exclude.txt
+                            echo blue >> exclude.txt
+                            echo green >> exclude.txt
+                            echo tests >> exclude.txt
                             if exist ..\\app (
                                 echo Copying from app directory
                                 xcopy ..\\app\\* . /E /I /Y
                             ) else (
                                 echo app directory not found, copying from root
                                 xcopy ..\\* . /E /I /Y /EXCLUDE:exclude.txt
-                                echo templates > exclude.txt
-                                echo blue >> exclude.txt
-                                echo green >> exclude.txt
-                                echo tests >> exclude.txt
                             )
                             dir
+                            if not exist app.py (
+                                echo ERROR: app.py not copied to green directory
+                                exit /b 1
+                            )
+                            if not exist requirements.txt (
+                                echo ERROR: requirements.txt not copied to green directory
+                                exit /b 1
+                            )
                         '''
                         
                         // Debug Python environment and create virtual environment
