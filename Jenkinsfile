@@ -24,11 +24,19 @@ pipeline {
             steps {
                 script {
                     dir("${env.INACTIVE_ENV}") {
-                        bat 'del /Q *.*'
-                        bat 'xcopy ..\\app\\*.* . /E /I /Y'
+                        bat 'del /Q /S *.*'
+                        bat 'xcopy ..\\app\\* . /E /I /Y'
                         bat 'if not exist venv (python -m venv venv)'
-                        bat 'call venv\\Scripts\\activate && pip install -r requirements.txt'
-                        bat "start /B python app.py --port=${env.INACTIVE_PORT} --env=${env.INACTIVE_ENV}"
+                        bat 'call venv\\Scripts\\activate.bat && pip install -r requirements.txt'
+                        // Write a batch file to start the app and store PID
+                        writeFile file: 'start_app.bat', text: """
+                            @echo off
+                            set PORT=${env.INACTIVE_PORT}
+                            set APP_ENV=${env.INACTIVE_ENV}
+                            start /B python app.py
+                            echo %PID% > app.pid
+                        """
+                        bat 'call start_app.bat'
                         sleep 5 // Wait for app to start
                     }
                 }
@@ -37,7 +45,7 @@ pipeline {
         stage('Run Health Checks') {
             steps {
                 dir('tests') {
-                    bat "python test_app.py ${env.INACTIVE_PORT}"
+                    bat 'python test_app.py %INACTIVE_PORT%'
                 }
             }
         }
@@ -54,7 +62,9 @@ pipeline {
                 script {
                     def oldEnv = env.INACTIVE_ENV == 'blue' ? 'green' : 'blue'
                     def oldPort = oldEnv == 'blue' ? env.BLUE_PORT : env.GREEN_PORT
-                    bat "taskkill /IM python.exe /F /FI \"WINDOWTITLE eq *${oldPort}*\""
+                    dir(oldEnv) {
+                        bat script: 'if exist app.pid (for /f "tokens=*" %i in (app.pid) do taskkill /PID %i /F) || exit 0', returnStatus: true
+                    }
                 }
             }
         }
@@ -64,12 +74,14 @@ pipeline {
             script {
                 echo 'Tests failed, rolling back'
                 def activeEnv = readFile('active_env.txt').trim()
-                def oldEnv = env.INACTIVE_ENV
+                def oldEnv = env.INACTIVE_ENV == 'blue' ? 'green' : 'blue'
                 if (activeEnv == env.INACTIVE_ENV) {
                     writeFile file: 'active_env.txt', text: oldEnv
                     echo "Rolled back to ${oldEnv}"
                 }
-                bat "taskkill /IM python.exe /F /FI \"WINDOWTITLE eq *${env.INACTIVE_PORT}*\""
+                dir(env.INACTIVE_ENV) {
+                    bat script: 'if exist app.pid (for /f "tokens=*" %i in (app.pid) do taskkill /PID %i /F) || exit 0', returnStatus: true
+                }
             }
         }
         always {
