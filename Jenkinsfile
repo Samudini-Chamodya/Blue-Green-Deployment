@@ -12,12 +12,31 @@ pipeline {
                 cleanWs()
             }
         }
+        stage('Debug Workspace') {
+            steps {
+                // List workspace contents to verify repository structure
+                bat 'dir /S'
+            }
+        }
         stage('Setup Green Environment') {
             steps {
                 script {
                     dir('green') {
-                        // Copy application files
-                        bat 'xcopy ..\\app\\* . /E /I /Y'
+                        // Try copying from app directory first
+                        bat '''
+                            if exist ..\\app (
+                                echo Copying from app directory
+                                xcopy ..\\app\\* . /E /I /Y
+                            ) else (
+                                echo app directory not found, copying from root
+                                xcopy ..\\* . /E /I /Y /EXCLUDE:exclude.txt
+                                echo templates > exclude.txt
+                                echo blue >> exclude.txt
+                                echo green >> exclude.txt
+                                echo tests >> exclude.txt
+                            )
+                            dir
+                        '''
                         
                         // Debug Python environment and create virtual environment
                         bat '''
